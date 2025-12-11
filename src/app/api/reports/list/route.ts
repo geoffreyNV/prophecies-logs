@@ -2,6 +2,17 @@ import { NextResponse } from 'next/server';
 import { prisma } from '@/lib/db';
 
 export async function GET(request: Request) {
+  // Sur Vercel, SQLite n'est pas disponible
+  if (process.env.VERCEL || !process.env.DATABASE_URL || process.env.DATABASE_URL.includes('vercel')) {
+    return NextResponse.json({
+      reports: [],
+      total: 0,
+      limit: 0,
+      offset: 0,
+      message: 'Base de données non disponible sur Vercel. Utilisez l\'import manuel de rapports.',
+    });
+  }
+
   try {
     const { searchParams } = new URL(request.url);
     const limit = parseInt(searchParams.get('limit') || '100');

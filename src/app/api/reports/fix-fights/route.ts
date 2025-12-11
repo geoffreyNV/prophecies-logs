@@ -6,6 +6,14 @@ import { getReport } from '@/lib/warcraftlogs';
  * Route pour réimporter les fights manquants des rapports existants
  */
 export async function POST(request: Request) {
+  // Sur Vercel, SQLite n'est pas disponible
+  if (process.env.VERCEL || !process.env.DATABASE_URL || process.env.DATABASE_URL.includes('vercel')) {
+    return NextResponse.json(
+      { error: 'Base de données non disponible sur Vercel. Cette fonctionnalité nécessite une base de données locale.' },
+      { status: 503 }
+    );
+  }
+
   try {
     // Récupérer tous les rapports sans fights
     const reportsWithoutFights = await prisma.report.findMany({

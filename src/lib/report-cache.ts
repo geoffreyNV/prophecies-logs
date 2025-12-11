@@ -13,6 +13,61 @@ const CACHE_DURATION = 60 * 60 * 1000;
  * Récupère ou met en cache un rapport depuis WarcraftLogs
  */
 export async function getCachedReport(reportCode: string) {
+  // Sur Vercel, SQLite n'est pas disponible, utiliser directement l'API
+  if (process.env.VERCEL || !process.env.DATABASE_URL || process.env.DATABASE_URL.includes('vercel')) {
+    console.log(`[API] Environnement Vercel détecté, utilisation directe de l'API pour ${reportCode}`);
+    const reportData = await getReport(reportCode);
+    if (!reportData || typeof reportData !== 'object') {
+      throw new Error('Invalid report data');
+    }
+    const report = reportData as {
+      code: string;
+      title: string;
+      startTime: number;
+      endTime: number;
+      zone?: { id: number; name: string };
+      owner?: { name: string };
+      fights: Array<{
+        id: number;
+        name: string;
+        encounterID: number;
+        startTime: number;
+        endTime: number;
+        kill: boolean;
+        difficulty?: number;
+        fightPercentage?: number;
+        lastPhase?: number;
+      }>;
+    };
+    // Retourner un format compatible sans base de données
+    return {
+      code: report.code,
+      title: report.title,
+      startTime: BigInt(report.startTime),
+      endTime: BigInt(report.endTime),
+      zoneId: report.zone?.id,
+      zoneName: report.zone?.name,
+      owner: report.owner?.name,
+      fights: report.fights.map(f => ({
+        id: '',
+        reportId: '',
+        fightId: f.id,
+        name: f.name,
+        encounterId: f.encounterID,
+        startTime: BigInt(f.startTime),
+        endTime: BigInt(f.endTime),
+        kill: f.kill,
+        difficulty: f.difficulty ?? null,
+        fightPercentage: f.fightPercentage ?? null,
+        lastPhase: f.lastPhase ?? null,
+        createdAt: new Date(),
+        updatedAt: new Date(),
+      })),
+      createdAt: new Date(),
+      updatedAt: new Date(),
+    };
+  }
+
   // Vérifier si le rapport existe en cache
   const cached = await prisma.report.findUnique({
     where: { code: reportCode },
@@ -138,6 +193,12 @@ export async function getCachedReport(reportCode: string) {
  * Récupère ou met en cache l'analyse des morts d'un combat
  */
 export async function getCachedDeathAnalysis(reportCode: string, fightId: number) {
+  // Sur Vercel, SQLite n'est pas disponible, utiliser directement l'API
+  if (process.env.VERCEL || !process.env.DATABASE_URL || process.env.DATABASE_URL.includes('vercel')) {
+    console.log(`[API] Environnement Vercel détecté, utilisation directe de l'API pour le fight ${fightId}`);
+    return await analyzeFightDeaths(reportCode, fightId);
+  }
+
   // Trouver le fight en DB
   const report = await prisma.report.findUnique({
     where: { code: reportCode },
