@@ -1,5 +1,5 @@
 import { NextResponse } from 'next/server';
-import { getReport, getFightDPS } from '@/lib/warcraftlogs';
+import { getReport, getFightDPS, getEncounterSpecAverages } from '@/lib/warcraftlogs';
 
 interface DPSRequest {
   reportCodes: string[];
@@ -55,6 +55,39 @@ export async function POST(request: Request) {
 
     console.log(`Fetching DPS data for ${body.bossName}, time filter: ${body.startTime}s - ${body.endTime}s`);
 
+    // Récupérer l'encounterID depuis le premier rapport pour obtenir les moyennes par spec
+    let encounterID: number | null = null;
+    if (body.reportCodes.length > 0) {
+      const firstReport = await getReport(body.reportCodes[0]) as {
+        fights: FightInfo[];
+      } | null;
+      if (firstReport?.fights) {
+        const matchingFight = firstReport.fights.find(
+          (f: FightInfo) =>
+            f.name.toLowerCase().includes(body.bossName.toLowerCase()) &&
+            (body.difficulty === undefined || f.difficulty === body.difficulty)
+        );
+        if (matchingFight && 'encounterID' in matchingFight) {
+          encounterID = (matchingFight as any).encounterID;
+        }
+      }
+    }
+
+    // Récupérer les moyennes par spécialisation si on a l'encounterID
+    let specAverages: Record<string, { averageDPS: number; medianDPS: number; sampleSize: number }> = {};
+    if (encounterID && body.bossName.toLowerCase().includes('nexus-king')) {
+      try {
+        specAverages = await getEncounterSpecAverages(
+          encounterID,
+          body.difficulty || 4, // Héroïque par défaut
+          'EU'
+        );
+        console.log(`Récupéré les moyennes pour ${Object.keys(specAverages).length} spécialisations`);
+      } catch (error) {
+        console.error('Error fetching spec averages:', error);
+      }
+    }
+
     // Collecter les DPS de tous les reports
     const allPlayerDPS: Record<string, {
       name: string;
@@ -62,6 +95,7 @@ export async function POST(request: Request) {
       totalTime: number;
       fightCount: number;
       dpsByFight: number[];
+      spec?: string; // Spécialisation du joueur
     }> = {};
 
     let totalFights = 0;
@@ -116,6 +150,23 @@ export async function POST(request: Request) {
           totalFights++;
           totalDuration += effectiveDuration;
 
+          // Récupérer les infos des joueurs (spécialisation) depuis le rapport
+          // eslint-disable-next-line @typescript-eslint/no-explicit-any
+          const masterData = (dpsData as any).masterData;
+          const actorsMap: Record<number, { name: string; spec?: string; type?: string }> = {};
+          if (masterData?.actors) {
+            for (const actor of masterData.actors) {
+              if (actor.type === 'Player') {
+                // subType contient la spécialisation (ex: "Frost Mage", "Fury Warrior")
+                actorsMap[actor.id] = {
+                  name: actor.name,
+                  spec: actor.subType, // subType contient la spécialisation
+                  type: actor.type,
+                };
+              }
+            }
+          }
+
           for (const entry of entries) {
             // Seulement les joueurs DPS/Heal (pas les pets, pas les tanks)
             if (entry.type === 'Pet' || entry.type === 'NPC') continue;
@@ -123,6 +174,10 @@ export async function POST(request: Request) {
             const playerName = entry.name;
             const damage = entry.total || 0;
             const dps = effectiveDuration > 0 ? damage / effectiveDuration : 0;
+            
+            // Récupérer la spécialisation depuis actorsMap
+            const actorInfo = actorsMap[entry.id] || actorsMap[entry.guid];
+            const playerSpec = actorInfo?.spec;
 
             if (!allPlayerDPS[playerName]) {
               allPlayerDPS[playerName] = {
@@ -131,6 +186,7 @@ export async function POST(request: Request) {
                 totalTime: 0,
                 fightCount: 0,
                 dpsByFight: [],
+                spec: playerSpec,
               };
             }
 
@@ -138,6 +194,10 @@ export async function POST(request: Request) {
             allPlayerDPS[playerName].totalTime += effectiveDuration;
             allPlayerDPS[playerName].fightCount++;
             allPlayerDPS[playerName].dpsByFight.push(dps);
+            // Garder la spec si elle n'était pas définie
+            if (!allPlayerDPS[playerName].spec && playerSpec) {
+              allPlayerDPS[playerName].spec = playerSpec;
+            }
           }
         } catch (error) {
           console.error(`Error fetching DPS for fight ${fight.id}:`, error);
@@ -145,15 +205,40 @@ export async function POST(request: Request) {
       }
     }
 
-    // Calculer les moyennes
+    // Calculer les moyennes et comparer avec les moyennes par spec
     const playerStats = Object.values(allPlayerDPS).map((player) => {
       const averageDPS = player.totalTime > 0 ? player.totalDamage / player.totalTime : 0;
       const medianDPS = calculateMedian(player.dpsByFight);
       const minDPS = Math.min(...player.dpsByFight);
       const maxDPS = Math.max(...player.dpsByFight);
 
+      // Comparer avec la moyenne de la spécialisation
+      let specComparison: {
+        specAverageDPS: number;
+        specMedianDPS: number;
+        vsAverage: number; // Pourcentage par rapport à la moyenne
+        vsMedian: number; // Pourcentage par rapport à la médiane
+        sampleSize: number;
+      } | null = null;
+
+      if (player.spec && specAverages[player.spec]) {
+        const specAvg = specAverages[player.spec];
+        specComparison = {
+          specAverageDPS: specAvg.averageDPS,
+          specMedianDPS: specAvg.medianDPS,
+          vsAverage: specAvg.averageDPS > 0 
+            ? Math.round((averageDPS / specAvg.averageDPS) * 100) 
+            : 0,
+          vsMedian: specAvg.medianDPS > 0 
+            ? Math.round((averageDPS / specAvg.medianDPS) * 100) 
+            : 0,
+          sampleSize: specAvg.sampleSize,
+        };
+      }
+
       return {
         name: player.name,
+        spec: player.spec,
         averageDPS: Math.round(averageDPS),
         medianDPS: Math.round(medianDPS),
         minDPS: Math.round(minDPS),
@@ -163,6 +248,7 @@ export async function POST(request: Request) {
         consistency: player.dpsByFight.length > 1 
           ? Math.round((1 - (standardDeviation(player.dpsByFight) / averageDPS)) * 100)
           : 100,
+        specComparison,
       };
     }).sort((a, b) => b.averageDPS - a.averageDPS);
 
@@ -181,6 +267,7 @@ export async function POST(request: Request) {
       },
       globalAverageDPS: Math.round(globalAverageDPS),
       players: playerStats,
+      specAverages, // Inclure les moyennes par spec pour référence
     });
   } catch (error) {
     console.error('Error fetching DPS:', error);

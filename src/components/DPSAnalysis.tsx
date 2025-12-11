@@ -5,6 +5,7 @@ import { motion } from 'framer-motion';
 
 interface DPSPlayerStats {
   name: string;
+  spec?: string;
   averageDPS: number;
   medianDPS: number;
   minDPS: number;
@@ -12,6 +13,13 @@ interface DPSPlayerStats {
   totalDamage: number;
   fightCount: number;
   consistency: number;
+  specComparison?: {
+    specAverageDPS: number;
+    specMedianDPS: number;
+    vsAverage: number;
+    vsMedian: number;
+    sampleSize: number;
+  };
 }
 
 interface DPSData {
@@ -249,6 +257,7 @@ export default function DPSAnalysis({ reportCodes, bossName, difficulty }: DPSAn
                   <th className="px-4 py-3 text-center font-display text-[--text-muted] hidden sm:table-cell">Min / Max</th>
                   <th className="px-4 py-3 text-center font-display text-[--text-muted]">Régularité</th>
                   <th className="px-4 py-3 text-center font-display text-[--text-muted] hidden lg:table-cell">vs Moyenne</th>
+                  <th className="px-4 py-3 text-center font-display text-[--text-muted] hidden xl:table-cell">vs Spec</th>
                 </tr>
               </thead>
               <tbody>
@@ -272,8 +281,13 @@ export default function DPSAnalysis({ reportCodes, bossName, difficulty }: DPSAn
                         <span className="text-xl">{getRankEmoji(index + 1)}</span>
                       </td>
                       <td className="px-4 py-3">
-                        <span className="font-semibold">{player.name}</span>
-                        <span className="text-xs text-[--text-muted] ml-2">({player.fightCount} fights)</span>
+                        <div className="flex flex-col">
+                          <span className="font-semibold">{player.name}</span>
+                          {player.spec && (
+                            <span className="text-xs text-[--accent-purple-light]">{player.spec}</span>
+                          )}
+                          <span className="text-xs text-[--text-muted]">({player.fightCount} fights)</span>
+                        </div>
                       </td>
                       <td className="px-4 py-3">
                         <span className="font-mono text-lg font-bold text-[--accent-gold]">
@@ -305,6 +319,26 @@ export default function DPSAnalysis({ reportCodes, bossName, difficulty }: DPSAn
                           {diff >= 0 ? '+' : ''}{formatNumber(diff)}
                           <span className="text-xs ml-1">({diffPercent >= 0 ? '+' : ''}{diffPercent.toFixed(0)}%)</span>
                         </span>
+                      </td>
+                      <td className="px-4 py-3 text-center hidden xl:table-cell">
+                        {player.specComparison ? (
+                          <div className="flex flex-col items-center gap-1">
+                            <span className={`font-mono font-semibold text-sm ${
+                              player.specComparison.vsAverage >= 100 ? 'text-green-400' : 'text-red-400'
+                            }`}>
+                              {player.specComparison.vsAverage >= 100 ? '+' : ''}
+                              {(player.specComparison.vsAverage - 100).toFixed(1)}%
+                            </span>
+                            <span className="text-xs text-[--text-muted]">
+                              vs {formatNumber(player.specComparison.specAverageDPS)}
+                            </span>
+                            <span className="text-xs text-[--text-muted]">
+                              (n={player.specComparison.sampleSize})
+                            </span>
+                          </div>
+                        ) : (
+                          <span className="text-xs text-[--text-muted]">N/A</span>
+                        )}
                       </td>
                     </motion.tr>
                   );

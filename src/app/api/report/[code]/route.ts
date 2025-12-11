@@ -1,5 +1,5 @@
 import { NextResponse } from 'next/server';
-import { getReport } from '@/lib/warcraftlogs';
+import { getCachedReport } from '@/lib/report-cache';
 import { Report, Fight } from '@/types';
 
 interface ReportData {
@@ -29,7 +29,28 @@ export async function GET(
     const { code } = await params;
     console.log('Fetching report:', code);
     
-    const report = await getReport(code) as ReportData | null;
+    const cachedReport = await getCachedReport(code);
+    
+    // Convertir le format Prisma au format attendu
+    const report: ReportData = {
+      code: cachedReport.code,
+      title: cachedReport.title,
+      startTime: Number(cachedReport.startTime),
+      endTime: Number(cachedReport.endTime),
+      zone: cachedReport.zoneName ? { name: cachedReport.zoneName } : undefined,
+      owner: cachedReport.owner ? { name: cachedReport.owner } : undefined,
+      fights: cachedReport.fights.map(f => ({
+        id: f.fightId,
+        name: f.name,
+        encounterID: f.encounterId,
+        startTime: Number(f.startTime),
+        endTime: Number(f.endTime),
+        kill: f.kill,
+        difficulty: f.difficulty || undefined,
+        fightPercentage: f.fightPercentage || undefined,
+        lastPhase: f.lastPhase || undefined,
+      })),
+    };
 
     if (!report) {
       return NextResponse.json(

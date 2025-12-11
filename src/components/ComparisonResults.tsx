@@ -5,6 +5,8 @@ import { motion } from 'framer-motion';
 import { BossComparison, FightComparison, PlayerFailStats, AbilityFailStats, NightCriticalDeaths, PlayerSurvivalStats } from '@/types';
 import DPSAnalysis from './DPSAnalysis';
 import ExportButton from './ExportButton';
+import SpellTooltip from './SpellTooltip';
+import { getSpellTranslation } from '@/lib/wowhead-translations';
 
 interface ComparisonResultsProps {
   comparison: BossComparison;
@@ -64,6 +66,21 @@ function SurvivalTable({ stats, globalAverage }: { stats: PlayerSurvivalStats[];
         </div>
       </div>
 
+      {/* Explication wipe call */}
+      <div className="bg-blue-500/10 border border-blue-500/30 rounded-xl p-4 mb-4">
+        <div className="flex items-start gap-3">
+          <div className="text-2xl">💡</div>
+          <div className="flex-1">
+            <div className="font-semibold text-blue-400 mb-1">Qu'est-ce que le "wipe call" ?</div>
+            <div className="text-sm text-[--text-muted]">
+              Le wipe call est détecté automatiquement lorsqu'il y a <strong className="text-white">4 morts ou plus en moins de 10 secondes</strong> après la moitié du combat.
+              Les morts <span className="text-yellow-400 font-semibold">avant le wipe call</span> sont les morts importantes qui ont causé l'échec.
+              Les morts <span className="text-orange-400 font-semibold">après le wipe call</span> sont celles qui se produisent quand le groupe a déjà abandonné.
+            </div>
+          </div>
+        </div>
+      </div>
+
       {/* Table */}
       <div className="bg-[--bg-medium] border border-[--border-color] rounded-xl overflow-hidden">
         <table className="w-full">
@@ -72,6 +89,20 @@ function SurvivalTable({ stats, globalAverage }: { stats: PlayerSurvivalStats[];
               <th className="px-4 py-3 text-left font-display text-[--text-muted] w-16">#</th>
               <th className="px-4 py-3 text-left font-display text-[--text-muted]">Joueur</th>
               <th className="px-4 py-3 text-left font-display text-[--text-muted]">Temps moyen</th>
+              <th className="px-4 py-3 text-left font-display text-[--text-muted] hidden lg:table-cell">
+                <div className="flex items-center gap-2">
+                  <span className="text-yellow-400">⚡</span>
+                  <span>Avant wipe call</span>
+                  <span className="text-xs text-[--text-muted]">(mort importante)</span>
+                </div>
+              </th>
+              <th className="px-4 py-3 text-left font-display text-[--text-muted] hidden lg:table-cell">
+                <div className="flex items-center gap-2">
+                  <span className="text-orange-400">⏸️</span>
+                  <span>Après wipe call</span>
+                  <span className="text-xs text-[--text-muted]">(abandon)</span>
+                </div>
+              </th>
               <th className="px-4 py-3 text-left font-display text-[--text-muted] hidden md:table-cell">Visualisation</th>
               <th className="px-4 py-3 text-center font-display text-[--text-muted]">Morts</th>
               <th className="px-4 py-3 text-center font-display text-[--text-muted] hidden sm:table-cell">vs Moyenne</th>
@@ -102,6 +133,40 @@ function SurvivalTable({ stats, globalAverage }: { stats: PlayerSurvivalStats[];
                       {formatDuration(player.averageSurvivalTime)}
                     </span>
                   </td>
+                  <td className="px-4 py-3 hidden lg:table-cell">
+                    {player.deathsBeforeWipeCall > 0 ? (
+                      <div className="flex flex-col gap-1">
+                        <div className="flex items-center gap-1.5">
+                          <span className="text-yellow-400 text-xs">⚡</span>
+                          <span className="font-mono text-sm font-semibold text-yellow-400">
+                            {formatDuration(player.averageSurvivalTimeBeforeWipe)}
+                          </span>
+                        </div>
+                        <span className="text-xs text-yellow-400/70 ml-5">
+                          {player.deathsBeforeWipeCall} mort{player.deathsBeforeWipeCall > 1 ? 's' : ''} importante{player.deathsBeforeWipeCall > 1 ? 's' : ''}
+                        </span>
+                      </div>
+                    ) : (
+                      <span className="text-xs text-[--text-muted] italic">Aucune mort importante</span>
+                    )}
+                  </td>
+                  <td className="px-4 py-3 hidden lg:table-cell">
+                    {player.deathsAfterWipeCall > 0 ? (
+                      <div className="flex flex-col gap-1">
+                        <div className="flex items-center gap-1.5">
+                          <span className="text-orange-400 text-xs">⏸️</span>
+                          <span className="font-mono text-sm font-semibold text-orange-400">
+                            {formatDuration(player.averageSurvivalTimeAfterWipe)}
+                          </span>
+                        </div>
+                        <span className="text-xs text-orange-400/70 ml-5">
+                          {player.deathsAfterWipeCall} mort{player.deathsAfterWipeCall > 1 ? 's' : ''} après abandon
+                        </span>
+                      </div>
+                    ) : (
+                      <span className="text-xs text-[--text-muted] italic">Aucune mort après abandon</span>
+                    )}
+                  </td>
                   <td className="px-4 py-3 hidden md:table-cell">
                     <div className="w-full bg-[--bg-dark] rounded-full h-4 overflow-hidden">
                       <motion.div
@@ -113,7 +178,22 @@ function SurvivalTable({ stats, globalAverage }: { stats: PlayerSurvivalStats[];
                     </div>
                   </td>
                   <td className="px-4 py-3 text-center">
-                    <span className="text-[--accent-red] font-semibold">{player.totalDeaths}</span>
+                    <div className="flex flex-col items-center gap-1">
+                      <span className="text-[--accent-red] font-semibold text-lg">{player.totalDeaths}</span>
+                      {(player.deathsBeforeWipeCall > 0 || player.deathsAfterWipeCall > 0) && (
+                        <div className="flex items-center gap-2 text-xs">
+                          <div className="flex items-center gap-1">
+                            <span className="text-yellow-400">⚡</span>
+                            <span className="text-yellow-400 font-semibold">{player.deathsBeforeWipeCall}</span>
+                          </div>
+                          <span className="text-[--text-muted]">/</span>
+                          <div className="flex items-center gap-1">
+                            <span className="text-orange-400">⏸️</span>
+                            <span className="text-orange-400 font-semibold">{player.deathsAfterWipeCall}</span>
+                          </div>
+                        </div>
+                      )}
+                    </div>
                   </td>
                   <td className="px-4 py-3 text-center hidden sm:table-cell">
                     <span className={`font-mono font-semibold ${diff >= 0 ? 'text-green-500' : 'text-red-500'}`}>
@@ -129,18 +209,34 @@ function SurvivalTable({ stats, globalAverage }: { stats: PlayerSurvivalStats[];
       </div>
 
       {/* Légende */}
-      <div className="flex flex-wrap gap-4 justify-center text-sm">
-        <div className="flex items-center gap-2">
-          <div className="w-4 h-4 rounded bg-green-500" />
-          <span className="text-[--text-muted]">&gt; +20% moyenne</span>
+      <div className="space-y-3">
+        <div className="flex flex-wrap gap-4 justify-center text-sm">
+          <div className="flex items-center gap-2">
+            <div className="w-4 h-4 rounded bg-green-500" />
+            <span className="text-[--text-muted]">&gt; +20% moyenne</span>
+          </div>
+          <div className="flex items-center gap-2">
+            <div className="w-4 h-4 rounded bg-yellow-500" />
+            <span className="text-[--text-muted]">± 20% moyenne</span>
+          </div>
+          <div className="flex items-center gap-2">
+            <div className="w-4 h-4 rounded bg-red-500" />
+            <span className="text-[--text-muted]">&lt; -20% moyenne</span>
+          </div>
         </div>
-        <div className="flex items-center gap-2">
-          <div className="w-4 h-4 rounded bg-yellow-500" />
-          <span className="text-[--text-muted]">± 20% moyenne</span>
-        </div>
-        <div className="flex items-center gap-2">
-          <div className="w-4 h-4 rounded bg-red-500" />
-          <span className="text-[--text-muted]">&lt; -20% moyenne</span>
+        <div className="flex flex-wrap gap-6 justify-center text-sm pt-2 border-t border-[--border-color]">
+          <div className="flex items-center gap-2">
+            <span className="text-yellow-400 text-lg">⚡</span>
+            <span className="text-[--text-muted]">
+              <strong className="text-yellow-400">Avant wipe call</strong> : Morts importantes qui causent l'échec
+            </span>
+          </div>
+          <div className="flex items-center gap-2">
+            <span className="text-orange-400 text-lg">⏸️</span>
+            <span className="text-[--text-muted]">
+              <strong className="text-orange-400">Après wipe call</strong> : Morts après l'abandon du groupe
+            </span>
+          </div>
         </div>
       </div>
     </div>
@@ -199,7 +295,11 @@ function PlayerCard({ player, rank }: { player: PlayerFailStats; rank: number })
           {topAbilities.map(([ability, count]) => (
             <div key={ability} className="flex items-center gap-2 text-sm">
               <div className="w-2 h-2 rounded-full bg-[--accent-red]" />
-              <span className="flex-1 truncate">{ability}</span>
+              <SpellTooltip abilityName={ability}>
+                <span className="flex-1 truncate text-[--accent-purple-light] hover:text-[--accent-purple] transition-colors cursor-help">
+                  {getSpellTranslation(ability).name}
+                </span>
+              </SpellTooltip>
               <span className="text-[--accent-red] font-semibold">{count}x</span>
             </div>
           ))}
@@ -225,7 +325,11 @@ function AbilityCard({ ability, rank }: { ability: AbilityFailStats; rank: numbe
         <div className="flex items-center gap-3">
           <div className="font-display text-2xl font-bold text-[--accent-gold]">#{rank}</div>
           <div className="flex-1">
-            <div className="font-display font-semibold">{ability.abilityName}</div>
+            <SpellTooltip abilityName={ability.abilityName}>
+              <div className="font-display font-semibold text-[--accent-purple-light] hover:text-[--accent-purple] transition-colors cursor-help">
+                {getSpellTranslation(ability.abilityName).name}
+              </div>
+            </SpellTooltip>
             <div className="text-xs text-[--text-muted]">
               Tue en moyenne à {formatDuration(ability.averageKillTime)}
             </div>
@@ -263,7 +367,11 @@ function ComboCard({ combo, rank }: { combo: { player: string; ability: string; 
       <div className="flex-1">
         <span className="font-semibold text-[--accent-purple-light]">{combo.player}</span>
         <span className="text-[--text-muted] mx-2">+</span>
-        <span className="text-[--text-secondary]">{combo.ability}</span>
+        <SpellTooltip abilityName={combo.ability}>
+          <span className="text-[--accent-purple-light] hover:text-[--accent-purple] transition-colors cursor-help">
+            {getSpellTranslation(combo.ability).name}
+          </span>
+        </SpellTooltip>
       </div>
       <div className="px-3 py-1 bg-[--accent-red] text-white rounded-full font-semibold text-sm">
         {combo.count}x
@@ -324,7 +432,11 @@ function CriticalDeathsTable({ nightsData }: { nightsData: NightCriticalDeaths[]
                               </span>
                               <div>
                                 <div className="font-semibold text-[--accent-purple-light]">{death.player}</div>
-                                <div className="text-[--text-secondary] text-xs">{death.ability}</div>
+                                <SpellTooltip abilityName={death.ability}>
+                                  <div className="text-[--accent-purple-light] hover:text-[--accent-purple] transition-colors cursor-help text-xs">
+                                    {getSpellTranslation(death.ability).name}
+                                  </div>
+                                </SpellTooltip>
                                 <div className="text-[--text-muted] text-xs font-mono">{formatDuration(death.time)}</div>
                               </div>
                             </div>
@@ -552,7 +664,11 @@ export default function ComparisonResults({ comparison }: ComparisonResultsProps
                     <span className="text-sm text-[--text-muted]">{fd.date} Try #{fd.attempt}</span>
                     <span className="font-semibold text-[--accent-purple-light]">{fd.player}</span>
                     <span className="text-[--text-muted]">tué par</span>
-                    <span className="text-[--text-secondary]">{fd.ability}</span>
+                    <SpellTooltip abilityName={fd.ability}>
+                      <span className="text-[--accent-purple-light] hover:text-[--accent-purple] transition-colors cursor-help">
+                        {getSpellTranslation(fd.ability).name}
+                      </span>
+                    </SpellTooltip>
                     <span className="ml-auto text-[--accent-gold] font-mono">{formatDuration(fd.time)}</span>
                   </div>
                 ))}

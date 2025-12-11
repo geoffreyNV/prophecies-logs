@@ -89,10 +89,16 @@ export interface PlayerSurvivalStats {
   playerName: string;
   totalFightsPresent: number;
   totalDeaths: number;
-  fightsSurvivedFull: number;
-  averageSurvivalTime: number;
-  survivalTimes: number[];
-  survivalRate: number;
+  deathsBeforeWipeCall: number; // Morts avant le wipe call
+  deathsAfterWipeCall: number; // Morts après le wipe call
+  fightsSurvivedFull: number; // Fights où il n'est pas mort
+  averageSurvivalTime: number; // Temps moyen avant de mourir (toutes morts confondues)
+  averageSurvivalTimeBeforeWipe: number; // Temps moyen avant de mourir AVANT le wipe call
+  averageSurvivalTimeAfterWipe: number; // Temps moyen avant de mourir APRÈS le wipe call
+  survivalTimes: number[]; // Tous les temps de survie pour calculer la médiane
+  survivalTimesBeforeWipe: number[]; // Temps de survie avant wipe call
+  survivalTimesAfterWipe: number[]; // Temps de survie après wipe call
+  survivalRate: number; // % de fights où il a survécu jusqu'au bout
 }
 
 export interface FailAnalysis {

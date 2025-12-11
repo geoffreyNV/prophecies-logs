@@ -17,6 +17,19 @@ export default function RootLayout({
         <link rel="preconnect" href="https://fonts.googleapis.com" />
         <link rel="preconnect" href="https://fonts.gstatic.com" crossOrigin="anonymous" />
         <link href="https://fonts.googleapis.com/css2?family=Cinzel:wght@400;600;700&family=Crimson+Pro:wght@300;400;500&display=swap" rel="stylesheet" />
+        <script
+          dangerouslySetInnerHTML={{
+            __html: `
+              var whTooltips = {
+                colorLinks: true,
+                iconizeLinks: true,
+                renameLinks: true,
+                locale: 'frFR'
+              };
+            `,
+          }}
+        />
+        <script src="https://wow.zamimg.com/js/tooltips.js" async></script>
       </head>
       <body>{children}</body>
     </html>

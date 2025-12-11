@@ -259,6 +259,14 @@ export async function getFightDPS(reportCode: string, fightId: number, startTime
             difficulty
             fightPercentage
           }
+          masterData {
+            actors {
+              id
+              name
+              type
+              subType
+            }
+          }
         }
       }
     }
@@ -302,4 +310,88 @@ export async function getMultipleFightsDPS(
   }
   
   return results;
+}
+
+/**
+ * Récupère les statistiques moyennes de DPS par spécialisation pour un encounter
+ * Nexus-King Salhadaar = encounterID 3134
+ */
+export async function getEncounterSpecAverages(
+  encounterID: number,
+  difficulty: number = 4, // Héroïque par défaut
+  serverRegion: string = 'EU'
+): Promise<Record<string, { averageDPS: number; medianDPS: number; sampleSize: number }>> {
+  const query = `
+    query GetEncounterSpecAverages($encounterID: Int!, $difficulty: Int!, $serverRegion: String!) {
+      worldData {
+        encounter(id: $encounterID) {
+          id
+          name
+          characterRankings(
+            difficulty: $difficulty
+            serverRegion: $serverRegion
+            metric: dps
+          )
+        }
+      }
+    }
+  `;
+
+  try {
+    const data = await queryWarcraftLogs(query, {
+      encounterID,
+      difficulty,
+      serverRegion,
+    }) as {
+      worldData: {
+        encounter: {
+          characterRankings: string; // JSON string
+        };
+      };
+    } | null;
+
+    if (!data?.worldData?.encounter?.characterRankings) {
+      return {};
+    }
+
+    // Parser le JSON string
+    const rankings = JSON.parse(data.worldData.encounter.characterRankings) as Array<{
+      spec: string;
+      amount: number;
+    }>;
+
+    // Grouper par spécialisation et calculer les moyennes
+    const specData: Record<string, number[]> = {};
+    
+    for (const ranking of rankings) {
+      if (!ranking.spec || !ranking.amount) continue;
+      if (!specData[ranking.spec]) {
+        specData[ranking.spec] = [];
+      }
+      specData[ranking.spec].push(ranking.amount);
+    }
+
+    const result: Record<string, { averageDPS: number; medianDPS: number; sampleSize: number }> = {};
+
+    for (const [spec, dpsValues] of Object.entries(specData)) {
+      if (dpsValues.length === 0) continue;
+      
+      const sorted = [...dpsValues].sort((a, b) => a - b);
+      const average = dpsValues.reduce((a, b) => a + b, 0) / dpsValues.length;
+      const median = sorted.length % 2 === 0
+        ? (sorted[sorted.length / 2 - 1] + sorted[sorted.length / 2]) / 2
+        : sorted[Math.floor(sorted.length / 2)];
+
+      result[spec] = {
+        averageDPS: Math.round(average),
+        medianDPS: Math.round(median),
+        sampleSize: dpsValues.length,
+      };
+    }
+
+    return result;
+  } catch (error) {
+    console.error('Error fetching encounter spec averages:', error);
+    return {};
+  }
 }

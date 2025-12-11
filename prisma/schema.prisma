@@ -1,0 +1,122 @@
+// This is your Prisma schema file,
+// learn more about it in the docs: https://pris.ly/d/prisma-schema
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "sqlite"
+  url      = env("DATABASE_URL")
+}
+
+// Rapport WarcraftLogs
+model Report {
+  id          String   @id @default(cuid())
+  code        String   @unique // Code du rapport WarcraftLogs
+  title       String
+  startTime   BigInt   // Timestamp en millisecondes (BigInt pour supporter les grandes valeurs)
+  endTime     BigInt
+  zoneId      Int?
+  zoneName    String?
+  owner       String?
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+  
+  fights      Fight[]
+  
+  @@index([code])
+}
+
+// Combat dans un rapport
+model Fight {
+  id                String   @id @default(cuid())
+  reportId         String
+  report           Report    @relation(fields: [reportId], references: [id], onDelete: Cascade)
+  
+  fightId          Int       // ID du fight dans WarcraftLogs
+  name             String
+  encounterId      Int
+  startTime        BigInt   // Timestamp en millisecondes
+  endTime          BigInt
+  kill             Boolean
+  difficulty       Int?
+  fightPercentage  Float?
+  lastPhase        Int?
+  
+  createdAt        DateTime  @default(now())
+  updatedAt        DateTime  @updatedAt
+  
+  deaths           Death[]
+  deathAnalysis    DeathAnalysis?
+  
+  @@unique([reportId, fightId])
+  @@index([encounterId])
+  @@index([kill])
+}
+
+// Mort d'un joueur
+model Death {
+  id                String   @id @default(cuid())
+  fightId           String
+  fight             Fight    @relation(fields: [fightId], references: [id], onDelete: Cascade)
+  
+  timestamp         BigInt   // Timestamp en millisecondes
+  playerName        String
+  playerId          Int
+  killingAbility    String
+  killingAbilityId  Int?
+  killingSource     String?
+  fightTimeSeconds  Float
+  isAfterWipeCall   Boolean  @default(false)
+  
+  createdAt         DateTime @default(now())
+  
+  @@index([fightId])
+  @@index([playerName])
+  @@index([killingAbility])
+}
+
+// Analyse des morts d'un combat (cache)
+model DeathAnalysis {
+  id                String   @id @default(cuid())
+  fightId           String   @unique
+  fight             Fight     @relation(fields: [fightId], references: [id], onDelete: Cascade)
+  
+  totalDeaths       Int
+  deathsBeforeWipe  Int
+  deathsAfterWipe   Int
+  estimatedWipeCallTime Float?
+  
+  createdAt         DateTime @default(now())
+  updatedAt         DateTime @updatedAt
+}
+
+// Cache des sorts (traductions et infos)
+model Spell {
+  id                String   @id @default(cuid())
+  nameEn            String   @unique // Nom en anglais
+  nameFr            String   // Nom en français
+  description       String?
+  spellId           Int?     @unique // ID WoWHead
+  iconUrl           String?
+  
+  createdAt         DateTime @default(now())
+  updatedAt         DateTime @updatedAt
+  
+  @@index([nameEn])
+  @@index([spellId])
+}
+
+// Cache des joueurs
+model Player {
+  id                String   @id @default(cuid())
+  name              String   @unique
+  server            String?
+  region            String?
+  
+  createdAt         DateTime @default(now())
+  updatedAt         DateTime @updatedAt
+  
+  @@index([name])
+}

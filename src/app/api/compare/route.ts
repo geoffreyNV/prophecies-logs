@@ -18,12 +18,7 @@ export async function POST(request: Request) {
       );
     }
 
-    if (body.reportCodes.length > 4) {
-      return NextResponse.json(
-        { error: 'Maximum 4 rapports peuvent être comparés' },
-        { status: 400 }
-      );
-    }
+    // Pas de limite pour les rapports depuis la base de données
 
     if (!body.bossName) {
       return NextResponse.json(

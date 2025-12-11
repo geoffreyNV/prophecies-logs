@@ -7,7 +7,11 @@ import BossSelector from '@/components/BossSelector';
 import ComparisonResults from '@/components/ComparisonResults';
 import LoadingOverlay from '@/components/LoadingOverlay';
 import RawLogsExport from '@/components/RawLogsExport';
+import GuildImportButton from '@/components/GuildImportButton';
+import DatabaseReports from '@/components/DatabaseReports';
 import { Report, BossComparison } from '@/types';
+
+type TabType = 'manual' | 'database';
 
 export default function Home() {
   const [reports, setReports] = useState<Report[]>([]);
@@ -15,6 +19,7 @@ export default function Home() {
   const [comparison, setComparison] = useState<BossComparison | null>(null);
   const [isLoading, setIsLoading] = useState(false);
   const [loadingText, setLoadingText] = useState('Chargement...');
+  const [activeTab, setActiveTab] = useState<TabType>('manual');
 
   const handleAddReport = (report: Report) => {
     setReports([...reports, report]);
@@ -70,16 +75,60 @@ export default function Home() {
       <Header />
 
       <main className="max-w-7xl mx-auto px-4 md:px-8 py-8 space-y-8">
-        <ReportInput
-          reports={reports}
-          onAddReport={handleAddReport}
-          onRemoveReport={handleRemoveReport}
-          isLoading={isLoading}
-          setIsLoading={(loading) => {
-            setIsLoading(loading);
-            setLoadingText('Récupération du rapport...');
-          }}
-        />
+        <GuildImportButton />
+        
+        {/* Onglets pour choisir entre saisie manuelle et base de données */}
+        <div className="card p-6">
+          <div className="flex items-center gap-4 mb-6 border-b border-[--border-color]">
+            <button
+              onClick={() => {
+                setActiveTab('manual');
+                setReports([]);
+                setComparison(null);
+              }}
+              className={`px-6 py-3 font-display font-semibold transition-all border-b-2 ${
+                activeTab === 'manual'
+                  ? 'border-[--accent-gold] text-[--accent-gold]'
+                  : 'border-transparent text-[--text-muted] hover:text-[--text-primary]'
+              }`}
+            >
+              ✏️ Saisie Manuelle
+            </button>
+            <button
+              onClick={() => {
+                setActiveTab('database');
+                setComparison(null);
+              }}
+              className={`px-6 py-3 font-display font-semibold transition-all border-b-2 ${
+                activeTab === 'database'
+                  ? 'border-[--accent-gold] text-[--accent-gold]'
+                  : 'border-transparent text-[--text-muted] hover:text-[--text-primary]'
+              }`}
+            >
+              📚 Base de Données
+            </button>
+          </div>
+
+          {activeTab === 'manual' && (
+            <ReportInput
+              reports={reports}
+              onAddReport={handleAddReport}
+              onRemoveReport={handleRemoveReport}
+              isLoading={isLoading}
+              setIsLoading={(loading) => {
+                setIsLoading(loading);
+                setLoadingText('Récupération du rapport...');
+              }}
+            />
+          )}
+
+          {activeTab === 'database' && (
+            <DatabaseReports
+              onSelectReports={setReports}
+              selectedReports={reports}
+            />
+          )}
+        </div>
 
         {reports.length > 0 && (
           <RawLogsExport reports={reports} />

@@ -1,5 +1,6 @@
 import { Death, DeathAnalysis, FightComparison, BossComparison } from '@/types';
 import { getReport, getFightDeaths, getFightSummary } from './warcraftlogs';
+import { getCachedReport, getCachedDeathAnalysis } from './report-cache';
 
 const WIPE_DEATH_THRESHOLD = 5;
 const WIPE_TIME_WINDOW = 10;
@@ -40,7 +41,7 @@ interface DeathEvent {
   };
 }
 
-function detectWipeCall(deaths: Death[], fightDuration: number): number | undefined {
+export function detectWipeCall(deaths: Death[], fightDuration: number): number | undefined {
   if (deaths.length < WIPE_DEATH_THRESHOLD) {
     return undefined;
   }
@@ -207,9 +208,15 @@ export interface PlayerSurvivalStats {
   playerName: string;
   totalFightsPresent: number;
   totalDeaths: number;
+  deathsBeforeWipeCall: number; // Morts avant le wipe call
+  deathsAfterWipeCall: number; // Morts après le wipe call
   fightsSurvivedFull: number; // Fights où il n'est pas mort
-  averageSurvivalTime: number; // Temps moyen avant de mourir
+  averageSurvivalTime: number; // Temps moyen avant de mourir (toutes morts confondues)
+  averageSurvivalTimeBeforeWipe: number; // Temps moyen avant de mourir AVANT le wipe call
+  averageSurvivalTimeAfterWipe: number; // Temps moyen avant de mourir APRÈS le wipe call
   survivalTimes: number[]; // Tous les temps de survie pour calculer la médiane
+  survivalTimesBeforeWipe: number[]; // Temps de survie avant wipe call
+  survivalTimesAfterWipe: number[]; // Temps de survie après wipe call
   survivalRate: number; // % de fights où il a survécu jusqu'au bout
 }
 
@@ -243,22 +250,74 @@ export async function compareBossAcrossReports(
   const playerSurvivalData: Record<string, {
     fightDurations: number[];
     deathTimes: number[];
+    deathTimesBeforeWipe: number[];
+    deathTimesAfterWipe: number[];
     fightsSurvived: number;
   }> = {};
 
   for (const reportCode of reportCodes) {
     console.log(`Processing report: ${reportCode}`);
-    const report = await getReport(reportCode) as {
-      startTime: number;
-      fights: FightInfo[];
-    } | null;
     
-    if (!report) {
-      console.log(`Report ${reportCode} not found`);
-      continue;
+    // Essayer d'abord de récupérer depuis la BDD
+    let report: {
+      startTime: number | bigint;
+      fights: Array<{
+        id: number;
+        fightId: number;
+        name: string;
+        encounterID?: number;
+        encounterId?: number;
+        startTime: number | bigint;
+        endTime: number | bigint;
+        kill: boolean;
+        difficulty?: number;
+        fightPercentage?: number;
+        lastPhase?: number;
+      }>;
+    } | null = null;
+    
+    try {
+      // Essayer de récupérer depuis la BDD
+      const cachedReport = await getCachedReport(reportCode);
+      if (cachedReport && cachedReport.fights && cachedReport.fights.length > 0) {
+        console.log(`[BDD] Utilisation des données de la BDD pour ${reportCode}`);
+        report = {
+          startTime: Number(cachedReport.startTime),
+          fights: cachedReport.fights.map(f => ({
+            id: f.fightId, // Utiliser fightId de la BDD comme id
+            fightId: f.fightId,
+            name: f.name,
+            encounterID: f.encounterId,
+            encounterId: f.encounterId,
+            startTime: Number(f.startTime),
+            endTime: Number(f.endTime),
+            kill: f.kill,
+            difficulty: f.difficulty,
+            fightPercentage: f.fightPercentage,
+            lastPhase: f.lastPhase,
+          })),
+        };
+      }
+    } catch (error) {
+      console.log(`[BDD] Rapport ${reportCode} non trouvé en BDD, utilisation de l'API`);
     }
-
-    const reportDate = new Date(report.startTime).toISOString().split('T')[0];
+    
+    // Si pas en BDD, utiliser l'API
+    if (!report) {
+      const apiReport = await getReport(reportCode) as {
+        startTime: number;
+        fights: FightInfo[];
+      } | null;
+      
+      if (!apiReport) {
+        console.log(`Report ${reportCode} not found`);
+        continue;
+      }
+      
+      report = apiReport;
+    }
+    
+    const reportDate = new Date(Number(report.startTime)).toISOString().split('T')[0];
     
     const nightData: NightCriticalDeaths = {
       date: reportDate,
@@ -267,7 +326,7 @@ export async function compareBossAcrossReports(
     };
 
     const matchingFights = (report.fights || []).filter(
-      (f: FightInfo) =>
+      (f) =>
         f.name.toLowerCase().includes(bossName.toLowerCase()) &&
         (difficulty === undefined || f.difficulty === difficulty)
     );
@@ -277,11 +336,12 @@ export async function compareBossAcrossReports(
     let attemptNumber = 0;
     for (const fight of matchingFights) {
       attemptNumber++;
-      const fightId = fight.id;
+      const fightId = fight.id || fight.fightId;
 
       try {
-        const deathAnalysis = await analyzeFightDeaths(reportCode, fightId);
-        const duration = (fight.endTime - fight.startTime) / 1000;
+        // Utiliser getCachedDeathAnalysis qui utilise la BDD si disponible
+        const deathAnalysis = await getCachedDeathAnalysis(reportCode, fightId);
+        const duration = (Number(fight.endTime) - Number(fight.startTime)) / 1000;
 
         comparisons.push({
           reportCode,
@@ -348,39 +408,42 @@ export async function compareBossAcrossReports(
           abilityStats[abilityName].kills.push(death);
           
           abilityDeathCount[abilityName] = (abilityDeathCount[abilityName] || 0) + 1;
-          
-          // Stats de survie
+        }
+        
+        // Stats de survie : traiter TOUS les joueurs qui sont morts dans ce fight
+        // Séparer les morts avant et après le wipe call
+        const wipeCallTime = deathAnalysis.estimatedWipeCallTime;
+        
+        for (const death of deathAnalysis.deaths) {
           if (!playerSurvivalData[death.playerName]) {
             playerSurvivalData[death.playerName] = {
               fightDurations: [],
               deathTimes: [],
-              fightsSurvived: 0,
-            };
-          }
-          // Temps de survie = temps avant de mourir
-          playerSurvivalData[death.playerName].deathTimes.push(death.fightTimeSeconds);
-          playerSurvivalData[death.playerName].fightDurations.push(duration);
-        }
-        
-        // Pour les joueurs qui ont survécu ce fight (sont morts mais après le wipe call, ou pas morts du tout)
-        // On considère qu'ils ont survécu la durée totale du fight
-        const allPlayersThisFight = new Set(Array.from(playersWhoDeadThisFight).concat(deathAnalysis.deaths.map(d => d.playerName)));
-        allPlayersThisFight.forEach(player => {
-          if (!playerSurvivalData[player]) {
-            playerSurvivalData[player] = {
-              fightDurations: [],
-              deathTimes: [],
+              deathTimesBeforeWipe: [],
+              deathTimesAfterWipe: [],
               fightsSurvived: 0,
             };
           }
           
-          // Si pas mort avant le wipe call, on compte comme survécu
-          if (!playersWhoDeadThisFight.has(player)) {
-            playerSurvivalData[player].fightsSurvived++;
-            playerSurvivalData[player].deathTimes.push(duration); // A survécu tout le fight
-            playerSurvivalData[player].fightDurations.push(duration);
+          // Temps de survie = temps avant de mourir
+          playerSurvivalData[death.playerName].deathTimes.push(death.fightTimeSeconds);
+          playerSurvivalData[death.playerName].fightDurations.push(duration);
+          
+          // Séparer selon si c'est avant ou après le wipe call
+          if (death.isAfterWipeCall || (wipeCallTime !== undefined && death.fightTimeSeconds > wipeCallTime)) {
+            // Mort après le wipe call
+            playerSurvivalData[death.playerName].deathTimesAfterWipe.push(death.fightTimeSeconds);
+          } else {
+            // Mort avant le wipe call (ou pas de wipe call détecté)
+            playerSurvivalData[death.playerName].deathTimesBeforeWipe.push(death.fightTimeSeconds);
           }
-        });
+        }
+        
+        // Pour les joueurs qui ont survécu ce fight sans mourir du tout
+        // On ne peut les compter que si on a la liste complète des joueurs présents
+        // Pour l'instant, on ne compte que ceux qu'on sait avoir été présents (via les morts)
+        // Note: On ne peut pas détecter les joueurs qui ont survécu sans mourir car on n'a pas
+        // la liste complète des joueurs présents dans le fight
         
       } catch (error) {
         console.error(`Error analyzing fight ${fightId}:`, error);
@@ -494,11 +557,26 @@ export async function compareBossAcrossReports(
   const survivalStats: PlayerSurvivalStats[] = Object.entries(playerSurvivalData)
     .map(([playerName, data]) => {
       const totalFightsPresent = data.fightDurations.length;
-      const totalDeaths = data.deathTimes.filter((t, i) => t < data.fightDurations[i]).length;
+      const totalDeaths = data.deathTimes.length;
+      const deathsBeforeWipeCall = data.deathTimesBeforeWipe.length;
+      const deathsAfterWipeCall = data.deathTimesAfterWipe.length;
       const fightsSurvivedFull = data.fightsSurvived;
+      
+      // Temps moyen de survie global
       const averageSurvivalTime = data.deathTimes.length > 0
         ? data.deathTimes.reduce((a, b) => a + b, 0) / data.deathTimes.length
         : 0;
+      
+      // Temps moyen de survie avant wipe call
+      const averageSurvivalTimeBeforeWipe = data.deathTimesBeforeWipe.length > 0
+        ? data.deathTimesBeforeWipe.reduce((a, b) => a + b, 0) / data.deathTimesBeforeWipe.length
+        : 0;
+      
+      // Temps moyen de survie après wipe call
+      const averageSurvivalTimeAfterWipe = data.deathTimesAfterWipe.length > 0
+        ? data.deathTimesAfterWipe.reduce((a, b) => a + b, 0) / data.deathTimesAfterWipe.length
+        : 0;
+      
       const survivalRate = totalFightsPresent > 0
         ? (fightsSurvivedFull / totalFightsPresent) * 100
         : 0;
@@ -507,9 +585,15 @@ export async function compareBossAcrossReports(
         playerName,
         totalFightsPresent,
         totalDeaths,
+        deathsBeforeWipeCall,
+        deathsAfterWipeCall,
         fightsSurvivedFull,
         averageSurvivalTime,
+        averageSurvivalTimeBeforeWipe,
+        averageSurvivalTimeAfterWipe,
         survivalTimes: data.deathTimes,
+        survivalTimesBeforeWipe: data.deathTimesBeforeWipe,
+        survivalTimesAfterWipe: data.deathTimesAfterWipe,
         survivalRate,
       };
     })

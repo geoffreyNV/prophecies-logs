@@ -35,10 +35,12 @@ export default function ExportButton({ comparison }: ExportButtonProps) {
     // Temps de survie
     if (failAnalysis?.survivalStats && failAnalysis.survivalStats.length > 0) {
       lines.push('=== TEMPS DE SURVIE PAR JOUEUR ===');
-      lines.push('Rang,Joueur,Temps Moyen,Morts,vs Moyenne');
+      lines.push('Rang,Joueur,Temps Moyen,Morts Total,Morts Avant Wipe Call,Morts Après Wipe Call,Temps Moyen Avant Wipe Call,Temps Moyen Après Wipe Call,vs Moyenne');
       failAnalysis.survivalStats.forEach((player, index) => {
         const diff = player.averageSurvivalTime - failAnalysis.globalAverageSurvival;
-        lines.push(`${index + 1},${player.playerName},${formatDuration(player.averageSurvivalTime)},${player.totalDeaths},${diff >= 0 ? '+' : ''}${formatDuration(diff)}`);
+        const avgBefore = player.deathsBeforeWipeCall > 0 ? formatDuration(player.averageSurvivalTimeBeforeWipe) : '-';
+        const avgAfter = player.deathsAfterWipeCall > 0 ? formatDuration(player.averageSurvivalTimeAfterWipe) : '-';
+        lines.push(`${index + 1},${player.playerName},${formatDuration(player.averageSurvivalTime)},${player.totalDeaths},${player.deathsBeforeWipeCall},${player.deathsAfterWipeCall},${avgBefore},${avgAfter},${diff >= 0 ? '+' : ''}${formatDuration(diff)}`);
       });
       lines.push(`Moyenne globale: ${formatDuration(failAnalysis.globalAverageSurvival)}`);
       lines.push('');
@@ -125,7 +127,11 @@ export default function ExportButton({ comparison }: ExportButtonProps) {
         rank: i + 1,
         player: p.playerName,
         averageSurvivalSeconds: Math.round(p.averageSurvivalTime),
+        averageSurvivalSecondsBeforeWipe: p.deathsBeforeWipeCall > 0 ? Math.round(p.averageSurvivalTimeBeforeWipe) : null,
+        averageSurvivalSecondsAfterWipe: p.deathsAfterWipeCall > 0 ? Math.round(p.averageSurvivalTimeAfterWipe) : null,
         totalDeaths: p.totalDeaths,
+        deathsBeforeWipeCall: p.deathsBeforeWipeCall,
+        deathsAfterWipeCall: p.deathsAfterWipeCall,
         fightsSurvived: p.fightsSurvivedFull,
       })),
       globalAverageSurvival: comparison.failAnalysis?.globalAverageSurvival,
