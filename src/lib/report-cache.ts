@@ -175,8 +175,8 @@ export async function getCachedDeathAnalysis(reportCode: string, fightId: number
       playerName: d.playerName,
       playerId: d.playerId,
       killingAbility: d.killingAbility,
-      killingAbilityId: d.killingAbilityId,
-      killingSource: d.killingSource,
+      killingAbilityId: d.killingAbilityId ?? undefined,
+      killingSource: d.killingSource ?? undefined,
       fightTimeSeconds: d.fightTimeSeconds,
       isAfterWipeCall: d.isAfterWipeCall,
     }));
@@ -189,7 +189,7 @@ export async function getCachedDeathAnalysis(reportCode: string, fightId: number
         totalDeaths: cachedAnalysis.totalDeaths,
         deathsBeforeWipe: cachedAnalysis.deathsBeforeWipe,
         deathsAfterWipe: cachedAnalysis.deathsAfterWipe,
-        estimatedWipeCallTime: cachedAnalysis.estimatedWipeCallTime,
+        estimatedWipeCallTime: cachedAnalysis.estimatedWipeCallTime ?? undefined,
         deaths,
       };
     } else {
@@ -224,7 +224,7 @@ export async function getCachedDeathAnalysis(reportCode: string, fightId: number
         totalDeaths: newAnalysis.totalDeaths,
         deathsBeforeWipe: newAnalysis.deathsBeforeWipe,
         deathsAfterWipe: newAnalysis.deathsAfterWipe,
-        estimatedWipeCallTime: newAnalysis.estimatedWipeCallTime,
+        estimatedWipeCallTime: newAnalysis.estimatedWipeCallTime ?? undefined,
         deaths,
       };
     }
@@ -264,9 +264,9 @@ export async function getCachedDeathAnalysis(reportCode: string, fightId: number
       timestamp: BigInt(d.timestamp),
       playerName: d.playerName,
       playerId: d.playerId,
-      killingAbility: d.killingAbility,
-      killingAbilityId: d.killingAbilityId,
-      killingSource: d.killingSource,
+      killingAbility: d.killingAbility || 'Dégâts divers',
+      killingAbilityId: d.killingAbilityId ?? null,
+      killingSource: d.killingSource ?? null,
       fightTimeSeconds: d.fightTimeSeconds,
       isAfterWipeCall: d.isAfterWipeCall,
     })),

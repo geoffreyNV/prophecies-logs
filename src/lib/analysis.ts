@@ -292,9 +292,9 @@ export async function compareBossAcrossReports(
             startTime: Number(f.startTime),
             endTime: Number(f.endTime),
             kill: f.kill,
-            difficulty: f.difficulty,
-            fightPercentage: f.fightPercentage,
-            lastPhase: f.lastPhase,
+            difficulty: f.difficulty ?? undefined,
+            fightPercentage: f.fightPercentage ?? undefined,
+            lastPhase: f.lastPhase ?? undefined,
           })),
         };
       }
@@ -313,8 +313,23 @@ export async function compareBossAcrossReports(
         console.log(`Report ${reportCode} not found`);
         continue;
       }
-      
-      report = apiReport;
+
+      report = {
+        startTime: apiReport.startTime,
+        fights: apiReport.fights.map(f => ({
+          id: f.id,
+          fightId: f.id, // Utiliser id comme fightId pour l'API
+          name: f.name,
+          encounterID: f.encounterID,
+          encounterId: f.encounterID,
+          startTime: f.startTime,
+          endTime: f.endTime,
+          kill: f.kill,
+          difficulty: f.difficulty,
+          fightPercentage: f.fightPercentage,
+          lastPhase: undefined,
+        })),
+      };
     }
     
     const reportDate = new Date(Number(report.startTime)).toISOString().split('T')[0];

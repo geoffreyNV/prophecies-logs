@@ -6,6 +6,7 @@ interface ReportData {
   code: string;
   title: string;
   startTime: number;
+  endTime: number;
   zone?: { name: string };
   owner?: { name: string };
   fights: Array<{

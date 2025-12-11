@@ -10,6 +10,8 @@ interface DatabaseReportsProps {
 }
 
 interface DatabaseReport extends Report {
+  startTime?: number;
+  endTime?: number;
   fightsCount?: number;
 }
 
@@ -269,7 +271,7 @@ export default function DatabaseReports({ onSelectReports, selectedReports }: Da
                 </div>
                 
                 <div className="space-y-1 text-xs text-[--text-muted] mt-3">
-                  <div>📅 {formatDate(report.startTime)}</div>
+                  {report.startTime && <div>📅 {formatDate(report.startTime)}</div>}
                   {report.zoneName && (
                     <div>🗺️ {report.zoneName}</div>
                   )}
