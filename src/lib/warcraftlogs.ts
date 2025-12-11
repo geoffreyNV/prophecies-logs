@@ -108,7 +108,7 @@ export async function getReport(reportCode: string) {
           owner {
             name
           }
-          fights(killType: Encounters) {
+          fights {
             id
             name
             encounterID

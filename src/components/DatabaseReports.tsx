@@ -70,6 +70,63 @@ export default function DatabaseReports({ onSelectReports, selectedReports }: Da
     onSelectReports([]);
   };
 
+  const deleteReports = async (codes: string[]) => {
+    if (codes.length === 0) {
+      alert('Aucun rapport sélectionné');
+      return;
+    }
+
+    const reportNames = reports
+      .filter(r => codes.includes(r.code))
+      .map(r => r.title || r.code)
+      .join(', ');
+
+    const confirmMessage = codes.length === 1
+      ? `Êtes-vous sûr de vouloir supprimer le rapport "${reportNames}" ?\n\nCette action est irréversible et supprimera également tous les fights et morts associés.`
+      : `Êtes-vous sûr de vouloir supprimer ${codes.length} rapports ?\n\nCette action est irréversible et supprimera également tous les fights et morts associés.\n\nRapports: ${reportNames}`;
+
+    if (!confirm(confirmMessage)) {
+      return;
+    }
+
+    setIsLoading(true);
+    try {
+      const response = await fetch('/api/reports/delete', {
+        method: 'DELETE',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({ codes }),
+      });
+
+      if (!response.ok) {
+        const data = await response.json();
+        throw new Error(data.error || 'Erreur lors de la suppression');
+      }
+
+      const data = await response.json();
+      alert(data.message || 'Rapport(s) supprimé(s) avec succès');
+
+      // Retirer les rapports supprimés de la sélection
+      const newSelectedCodes = new Set(selectedCodes);
+      codes.forEach(code => newSelectedCodes.delete(code));
+      setSelectedCodes(newSelectedCodes);
+
+      // Recharger la liste
+      await loadReports();
+
+      // Mettre à jour les rapports sélectionnés
+      const remainingSelected = reports
+        .filter(r => newSelectedCodes.has(r.code) && !codes.includes(r.code));
+      onSelectReports(remainingSelected);
+    } catch (err) {
+      console.error('Error deleting reports:', err);
+      alert(err instanceof Error ? err.message : 'Erreur lors de la suppression');
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
   const formatDate = (timestamp: number) => {
     return new Date(timestamp).toLocaleString('fr-FR', {
       dateStyle: 'short',
@@ -108,7 +165,7 @@ export default function DatabaseReports({ onSelectReports, selectedReports }: Da
             {total} rapport{total > 1 ? 's' : ''} disponible{total > 1 ? 's' : ''} • {selectedCodes.size} sélectionné{selectedCodes.size > 1 ? 's' : ''}
           </p>
         </div>
-        <div className="flex gap-2">
+        <div className="flex gap-2 flex-wrap">
           <button
             onClick={selectAll}
             className="px-4 py-2 bg-[--bg-medium] hover:bg-[--bg-card-hover] rounded-lg text-sm transition-colors"
@@ -127,6 +184,15 @@ export default function DatabaseReports({ onSelectReports, selectedReports }: Da
           >
             🔄 Actualiser
           </button>
+          {selectedCodes.size > 0 && (
+            <button
+              onClick={() => deleteReports(Array.from(selectedCodes))}
+              className="px-4 py-2 bg-[--accent-red]/20 hover:bg-[--accent-red]/30 text-[--accent-red] rounded-lg text-sm transition-colors font-semibold"
+              title={`Supprimer ${selectedCodes.size} rapport(s) sélectionné(s)`}
+            >
+              🗑️ Supprimer ({selectedCodes.size})
+            </button>
+          )}
           <button
             onClick={async () => {
               if (confirm('Réimporter les fights manquants pour tous les rapports ?')) {
@@ -185,9 +251,21 @@ export default function DatabaseReports({ onSelectReports, selectedReports }: Da
                       {report.title}
                     </div>
                   </div>
-                  {isSelected && (
-                    <div className="text-2xl ml-2">✅</div>
-                  )}
+                  <div className="flex items-center gap-2 ml-2">
+                    {isSelected && (
+                      <div className="text-2xl">✅</div>
+                    )}
+                    <button
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        deleteReports([report.code]);
+                      }}
+                      className="px-2 py-1 bg-[--accent-red]/20 hover:bg-[--accent-red]/30 text-[--accent-red] rounded text-xs transition-colors"
+                      title="Supprimer ce rapport"
+                    >
+                      🗑️
+                    </button>
+                  </div>
                 </div>
                 
                 <div className="space-y-1 text-xs text-[--text-muted] mt-3">
